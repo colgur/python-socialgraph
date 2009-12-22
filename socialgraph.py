@@ -79,6 +79,7 @@ class SocialSubGraph(igraph.Graph):
             while True:                
                 try:
                     node_dict = lookup(params)
+                    break
                 except SocialGraphError, socerr:
                     # TODO: Log instead
                     print "%s" % socerr.message()
@@ -140,15 +141,16 @@ class SocialSubGraph(igraph.Graph):
             visited = VertexSet()
             visited.add(vertex)
 
+        if depth == 0:
+            postorder_process(vertex)
+            return
+        depth = depth - 1
+
         try:
             preorder_process([vertex['uri']])
         except:
             print "Gave up on '%s'" % vertex['uri']
             raise
-
-        depth = depth - 1
-        if depth == 0:
-            return
 
         for neighbor in self.neighbors(vertex.index):
             if self.vs[neighbor] not in visited:
@@ -249,15 +251,4 @@ def lookup(params):
 
 if __name__ == '__main__':
     print "Loaded socialgraph"
-    socg = SocialSubGraph()
-    socg.populate_vertices(['http://twitter.com/colgur'])
-    socg.populate_neighbors(['http://twitter.com/colgur'])
-
-    techies = ['http://twitter.com/colgur', 'http://twitter.com/freedryk', 'http://twitter.com/deadprogrammer', 'http://twitter.com/bootuplabs', 'http://twitter.com/codinghorror', 'http://twitter.com/secretgeek', 'http://twitter.com/perspx', 'http://twitter.com/migueldeicaza', 'http://twitter.com/andyy', 'http://twitter.com/kevinrose', 'http://twitter.com/techvibes', 'http://twitter.com/bootuplabs', 'http://twitter.com/keremk', 'http://twitter.com/NISSSAMSI']
-    techies_vids = [i for i in range(len(socg.vs)) if socg.vs[i]['uri'] in techies]
-    techiesg = socg.subgraph(techies_vids)
-
-    techies_listed = techies[1:]
-    techies_listed_vids = [i for i in range(len(socg.vs)) if socg.vs[i]['uri'] in techies_listed]
-    techies_dfsiters = [socg.dfsiter(each_vid, 1) for each_vid in techies_listed_vids]
 
