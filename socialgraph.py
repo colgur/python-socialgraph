@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-'''A library that provides a python interface to the Google Social Graph API'''
+'''Social Subgraph Creation and Manipulation derived from IGraph API'''
 
 __author__ = 'colgur@gmail.com'
 __version__ = '0.1-devel'
@@ -20,27 +20,52 @@ __version__ = '0.1-devel'
 import urllib2
 import urllib
 import simplejson as json
+from types import *
 
 import igraph
 
-SGAPI_LOOKUP = "http://socialgraph.apis.google.com/lookup"
-NODE_COUNT_LIMIT = 15
+SUCCESSORS = 2
+PREDECESSORS = 3
 
-class SocialGraphError(Exception):
-    '''Base class for Twitter errors'''  
+class SocialSubGraphError(Exception):
+    '''Base class for Network errors'''  
     @property
     def message(self):
-        '''Returns the first argument used to construct this error.'''
+        '''Return first argument used to construct this error'''
         return self.args[0]
 
-class VertexSet(set):
+class SocialVertex(object):
+    '''A Social Vertex'''
+    def __init__(self, id = None):
+        self._id = id
+        self._relations = None
+
+    def get_id(self):
+        return self._id
+
+    def set_id(self, id):
+        self._id = id
+
+    id = property(get_id, set_id,
+                    doc="Globally unique Social Vertex ID")
+
+    def get_relations(self):
+        return self._relations
+
+    def set_relations(self, relations):
+        self._relations = relations
+
+    relations = property(get_relations, set_relations,
+                    doc="Socially connected Vertices")
+
+class SocialVertexSet(set):
     def __contains__(self, val):
         for each_vertex in self:
-            if val['uri'] == each_vertex['uri']:
+            if val['svid'] == each_vertex['svid']:
                 return True
         return False
 
-class DFSIter(object):
+class DLSIter(object):
     def __init__(self, data):
         self.iter = iter(data)
 
@@ -58,87 +83,94 @@ class DFSIter(object):
         return ret
 
 class SocialSubGraph(igraph.Graph):
-    '''A Google Social Sub-Graph'''
-    def __init__(self):
+    '''A Social Sub-Graph'''
+    def __init__(self,
+                 lookup_method = lambda relationship, svids: None):
         '''An object to hold some portion of the Google Social Graph'''
         # IGraph Instance is Directed
         super(SocialSubGraph, self).__init__(1, [], True)
+        self._lookup_method = lookup_method
 
-    def populate_vertices(self, uris):
-        '''Cache a copy of Social Graph Node'''
-        for start_index in range(0, len(uris), NODE_COUNT_LIMIT):
-            end_index = start_index + NODE_COUNT_LIMIT
-            if end_index > len(uris): 
-                end_index = None
-            query_uris = uris[start_index:end_index]
-            
-            params = [
-                ("q", ",".join(query_uris))
-                ]
-            commerr = 0
-            while True:                
-                try:
-                    node_dict = lookup(params)
-                    break
-                except SocialGraphError, socerr:
-                    # TODO: Log instead
-                    print "%s" % socerr.message()
-                    commerr = commerr + 1
-                    if commerr > 2:
-                        raise
-                    # TODO: Sleep?
-                    print "Retrying..."
-                except:
-                    #TODO: Anything more?
-                    raise
+    def populate_followers(self, svids):
+        '''Predeccessors in Graph-speak'''
+        edge_seq = [(each_relation[1], each_relation[0])
+                    for each_relation in self._populate_vertices(PREDECESSORS, svids)]
+        self.add_edges(edge_seq)
 
-            for each_nodeuri in node_dict.keys():
+    def populate_friends(self, svids):
+        '''Successors in Graph-speak'''
+        edge_seq = [(each_relation[0], each_relation[1])
+                    for each_relation in self._populate_vertices(SUCCESSORS, svids)]
+        self.add_edges(edge_seq)
+
+    def _populate_vertices(self, relationship, svids):
+        '''Helper initializes underlying IGraph Vertices'''
+        for each_sv in self._lookup_method(relationship, svids):
+            focus_vid = self.add_vertex(each_sv)
+            for each_relation in each_sv.relations:
                 try:
-                    self._add_vertex(node_dict, each_nodeuri)
+                    related_vid = self.add_vertex(each_relation)
+                    yield (focus_vid, related_vid)
                 except SocialGraphError:
                     raise
 
-    def populate_neighbors(self, uris, type=igraph.ALL):
-        '''Cache a copy of each Neighbor Node in Social Graph'''
-        params = [
-            ("q", ",".join(uris))
-            ]
-        if type == igraph.OUT:
-            params.extend([("edo", "1"), ("edi", "0")])
-        elif type == igraph.IN:
-            params.extend([("edo", "0"), ("edi", "1")])
-        else:
-            params.extend([("edo", "1"), ("edi", "1")])
-        node_dict = lookup(params)
+    def _populate_iv(self, vertex, attributes):
+        '''Helper populates igraph.Vertex.attributes()'''
+        attributes.setdefault('svid', None)
+        vertex['svid'] = attributes['svid']
 
-        for each_nodeuri in node_dict.keys():
-            try:
-                self._add_vertex(node_dict, each_nodeuri)
+        attributes.setdefault('url', None)
+        vertex['url'] = attributes['url']
 
-                target_dict = node_dict[each_nodeuri]['nodes_referenced']
-                self._populate_es(target_dict, each_nodeuri)
-            except SocialGraphError:
-                raise
-            except KeyError:
-                # Empty is OK, non-existent is unexpected
-                raise SocialGraphError("Malformed Social Graph for uri='%s'" % each_nodeuri)
+        attributes.setdefault('fn', None)
+        vertex['fn'] = attributes['fn']
 
-    def dfsiter(self, vid, depth=6, advanced=False):
+    def add_vertex(self, socialvertex):
+        '''Helper updates igraph.VertexSeq (as necessary)'''
+        igraphvertex = self.vs[0]
+        try:
+            vertex_match = self.vs.select(svid=socialvertex.id)
+            if len(vertex_match) == 0:
+                # New Vertex
+                self.add_vertices(1)
+
+                reverse_vs = self.vs[::-1]
+                igraphvertex = reverse_vs[0]
+            elif len(vertex_match) == 1:
+                # Replacement Vertex
+                igraphvertex = vertex_match[0]
+            else:
+                # Confusion
+                raise SocialSubGraphError("Too many Vertices with uri='%s'" % nodeuri)
+        except KeyError:
+            # (Should) Only happen on the very first
+            pass
+        except SocialSubGraphError:
+            # Confusion
+            raise
+
+        attributes = dict({'svid': socialvertex.id})
+        self._populate_iv(igraphvertex, attributes)
+        return igraphvertex.index
+
+    def dlsiter(self, igraphvertex, depth=6, advanced=False):
         ret = []
         update_ret = lambda vertex: ret.extend([vertex])
 
         try:
-            self._init_dfsiter(self.vs[vid], depth, None, self.populate_neighbors, update_ret)
+            self._init_dlsiter(igraphvertex, depth, None, 
+                               self.populate_friends, 
+                               update_ret)
         except:
             # TODO: OK? Looking for 'best-effort'
             pass
-        return DFSIter(ret)
+        return DLSIter(ret)
 
-    def _init_dfsiter(self, vertex,  depth, visited = None,
+    def _init_dlsiter(self, vertex, depth, visited = None,
                       preorder_process = lambda x: None,
                       postorder_process = lambda x: None):
         if visited is None:
-            visited = VertexSet()
+            visited = SocialVertexSet()
             visited.add(vertex)
 
         if depth == 0:
@@ -147,108 +179,90 @@ class SocialSubGraph(igraph.Graph):
         depth = depth - 1
 
         try:
-            preorder_process([vertex['uri']])
+            preorder_process([vertex['svid']])
         except:
-            print "Gave up on '%s'" % vertex['uri']
+            print "Gave up on '%s'" % vertex['svid']
             raise
 
         for neighbor in self.neighbors(vertex.index):
             if self.vs[neighbor] not in visited:
-                self._init_dfsiter(self.vs[neighbor], depth, visited, preorder_process, postorder_process)
-
+                self._init_dlsiter(self.vs[neighbor], depth, visited, 
+                                   preorder_process, 
+                                   postorder_process)
         postorder_process(vertex)
         
-    def _add_vertex(self, node_dict, nodeuri):
-        '''Helper updates igraph.VertexSeq (as necessary)'''
-        igraph_vertex = self.vs[0]
+def twitter_lookup(relationship, svids):
+    '''Low-level access to Twitter Social Graph'''
+    sviditer = iter([svids])
+    if type(svids) is ListType:
+        sviditer = iter(svids)
+  
+    graphurl = "http://twitter.com/friends/ids.json"
+    if relationship == PREDECESSORS:
+        graphurl = "http://twitter.com/followers/ids.json"
+
+    for each_svid in sviditer:
+        params = [
+            ("user_id", each_svid)
+            ]
+        qs = urllib.urlencode(params)
+        url = "?".join([graphurl, qs])
         try:
-            vertex_match = self.vs.select(uri=nodeuri)
-            if len(vertex_match) == 0:
-                # New Vertex
-                self.add_vertices(1)
+            result = urllib2.urlopen(url)
+        except HTTPError, hterr:
+            raise SocialSubGraphError("Remote Service error: '%d - %s'" % (hterr.code, hterr.reason))
+        except URLError, urlerr:
+            raise SocialSubGraphError("Remote Service error: '%s'" % urlerr.reason)
 
-                reverse_vs = self.vs[::-1]
-                igraph_vertex = reverse_vs[0]
-            elif len(vertex_match) == 1:
-                # Replacement Vertex
-                igraph_vertex = vertex_match[0]
-            else:
-                # Confusion
-                raise SocialGraphError("Too many Vertices with uri='%s'" % nodeuri)
-        except KeyError:
-            # (Should) Only happen on the very first
-            pass
-        except SocialGraphError:
-            # Confusion
-            raise
+        vertex = SocialVertex(each_svid)
+        vertex.relations = [SocialVertex(each_relation_svid) 
+                            for each_relation_svid in json.load(result)]
+        yield vertex
 
+def google_lookup(relationship, svids):
+    '''Low-level access to Google Social Graph'''
+    sviditer = iter([svids])
+    if type(svids) is ListType:
+        sviditer = iter(svids)
+  
+    graphurl = "http://socialgraph.apis.google.com/lookup"
+    direction = ("edo", "1")
+    if relationship == PREDECESSORS:
+        direction = ("edi", "1")
+
+    for each_svid in sviditer:
+        params = [
+            ("q", each_svid),
+            direction
+            ]
+        qs = urllib.urlencode(params)
+        url = "?".join([graphurl, qs])
         try:
-            attributes = node_dict[nodeuri]['attributes']
-        except KeyError:
-            # Empty is OK, non-existent is unexpected
-            raise SocialGraphError("Malformed Social Graph Node for uri='%s'" % nodeuri)
+            result = urllib2.urlopen(url)
+        except HTTPError, hterr:
+            raise SocialSubGraphError("Remote Service error: '%d - %s'" % (hterr.code, hterr.reason))
+        except URLError, urlerr:
+            raise SocialSubGraphError("Remote Service error: '%s'" % urlerr.reason)
 
-        attributes['uri'] = nodeuri
-        self._populate_v(igraph_vertex, attributes)
+        vertex = SocialVertex(each_svid)
+        if relationship == PREDECESSORS:
+            relationship_dict = json.load(result)['nodes'][each_svid]['nodes_referenced_by']
+            vertex.relations = [
+                SocialVertex(eachuri) 
+                for eachuri in relationship_dict.keys()
+                ]
+        else:
+            relationship_dict = json.load(result)['nodes'][each_svid]['nodes_referenced']
+            vertex.relations = [
+                SocialVertex(eachuri) 
+                for eachuri in relationship_dict.keys()
+                if 'me' not in relationship_dict[eachuri]['types']
+                ]
+        yield vertex
 
-    def _populate_es(self, target_dict, vertexuri):
-        '''Helper populates igraph.EdgeSeq'''
-        target_seq = [eachuri for eachuri in target_dict.keys() if 'me' not in target_dict[eachuri]['types']]
-        self.populate_vertices( target_seq )
-
-        vertex_match = self.vs.select(uri=vertexuri)
-        assert len(vertex_match) == 1, SocialGraphError("Too many Neighbors with uri='%s'" % vertexuri)
-        vertex = vertex_match[0]
-
-        for each_neighboruri in target_seq:
-            neighbor_match = self.vs.select(uri=each_neighboruri)
-            assert len(neighbor_match) == 1, SocialGraphError("Too many Neighbors with uri='%s'" % vertexuri)
-            neighbor = neighbor_match[0]
-
-            self.add_edges( [(vertex.index, neighbor.index)] )
-
-    def _populate_v(self, vertex, attributes):
-        '''Helper populates igraph.Vertex.attributes()'''
-        attributes.setdefault('uri', None)
-        vertex['uri'] = attributes['uri']
-
-        attributes.setdefault('url', None)
-        vertex['url'] = attributes['url']
-
-        attributes.setdefault('profile', None)
-        vertex['profile'] = attributes['profile']
-
-        attributes.setdefault('rss', None)
-        vertex['rss'] = attributes['rss']
-
-        attributes.setdefault('atom', None)
-        vertex['atom'] = attributes['atom']
-
-        attributes.setdefault('foaf', None)
-        vertex['foaf'] = attributes['foaf']
-
-        attributes.setdefault('photo', None)
-        vertex['photo'] = attributes['photo']
-
-        attributes.setdefault('fn', None)
-        vertex['fn'] = attributes['fn']
-        
-def lookup(params):
-    '''Low-level access to the underlying Direct Graph'''
-    qs = urllib.urlencode(params)
-    url = "?".join([SGAPI_LOOKUP, qs])
-
-    try:
-        result = urllib2.urlopen(url)
-    except HTTPError, hterr:
-        raise SocialGraphError("Remote Service error: '%d - %s'" % (hterr.code, hterr.reason))
-    except URLError, urlerr:
-        raise SocialGraphError("Remote Service error: '%s'" % urlerr.reason)
-
-    struct = json.load(result)
-
-    return struct['nodes']
+def test():
+    import socialgraph_test
 
 if __name__ == '__main__':
-    print "Loaded socialgraph"
+    test()
 
