@@ -21,6 +21,7 @@ import urllib2
 import urllib
 import simplejson as json
 from types import *
+import time
 
 import igraph
 
@@ -93,26 +94,34 @@ class SocialSubGraph(igraph.Graph):
 
     def populate_followers(self, svids):
         '''Predeccessors in Graph-speak'''
-        edge_seq = [(each_relation[1], each_relation[0])
-                    for each_relation in self._populate_vertices(PREDECESSORS, svids)]
-        self.add_edges(edge_seq)
+        try:
+            edge_seq = [(each_relation[1], each_relation[0])
+                        for each_relation in self._populate_vertices(PREDECESSORS, svids)
+                        if not self.are_connected(each_relation[1], each_relation[0])]
+            self.add_edges(edge_seq)
+        except:
+            raise
 
     def populate_friends(self, svids):
         '''Successors in Graph-speak'''
-        edge_seq = [(each_relation[0], each_relation[1])
-                    for each_relation in self._populate_vertices(SUCCESSORS, svids)]
-        self.add_edges(edge_seq)
+        try:
+            edge_seq = [(each_relation[0], each_relation[1])
+                        for each_relation in self._populate_vertices(SUCCESSORS, svids)
+                        if not self.are_connected(each_relation[0], each_relation[1])]
+            self.add_edges(edge_seq)
+        except:
+            raise
 
     def _populate_vertices(self, relationship, svids):
         '''Helper initializes underlying IGraph Vertices'''
-        for each_sv in self._lookup_method(relationship, svids):
-            focus_vid = self.add_vertex(each_sv)
-            for each_relation in each_sv.relations:
-                try:
+        try:
+            for each_sv in self._lookup_method(relationship, svids):
+                focus_vid = self.add_vertex(each_sv)
+                for each_relation in each_sv.relations:
                     related_vid = self.add_vertex(each_relation)
                     yield (focus_vid, related_vid)
-                except SocialGraphError:
-                    raise
+        except:
+            raise
 
     def _populate_iv(self, vertex, attributes):
         '''Helper populates igraph.Vertex.attributes()'''
@@ -201,22 +210,59 @@ def twitter_lookup(relationship, svids):
     if relationship == PREDECESSORS:
         graphurl = "http://twitter.com/followers/ids.json"
 
-    for each_svid in sviditer:
-        params = [
-            ("user_id", each_svid)
-            ]
-        qs = urllib.urlencode(params)
-        url = "?".join([graphurl, qs])
-        try:
-            result = urllib2.urlopen(url)
-        except HTTPError, hterr:
-            raise SocialSubGraphError("Remote Service error: '%d - %s'" % (hterr.code, hterr.reason))
-        except URLError, urlerr:
-            raise SocialSubGraphError("Remote Service error: '%s'" % urlerr.reason)
+    def populate_relations(base_url, svid, relations):
+        def rate_limit():
+            rate_limit_status_url = 'http://twitter.com/account/rate_limit_status.json'
+            result = urllib2.urlopen(rate_limit_status_url)
 
+            rate_limit_dict = json.load(result)
+            reset_time = rate_limit_dict['reset_time_in_seconds']
+            remaining_hits = rate_limit_dict['remaining_hits']
+
+            if remaining_hits <= 0:
+                current_time = time.time()
+                sleep_time = reset_time - current_time
+                #TODO: Log instead
+                print "Local time: '%s'. Sleeping until '%s'" % (
+                     time.strftime("%a %b %d %H:%M:%S %Z %Y", time.localtime(current_time)),
+                     time.strftime("%a %b %d %H:%M:%S %Z %Y", time.localtime(reset_time))
+                     )
+                try:
+                    time.sleep(sleep_time)
+                except KeyboardInterrupt:
+                    raise SocialSubGraphError("Quiting lookup")
+        
+        cursor = -1
+        while cursor != 0:
+            try:
+                rate_limit()
+            except:
+                raise
+
+            params = [("user_id", svid),
+                      ("cursor", cursor)]
+            enc_params = urllib.urlencode(params)
+            param_url = "?".join([base_url, enc_params])
+            try:
+                result = urllib2.urlopen(param_url)
+            except HTTPError, hterr:
+                raise SocialSubGraphError("Remote Service error: '%d - %s'" % 
+                                          (hterr.code, hterr.reason))
+            except URLError, urlerr:
+                raise SocialSubGraphError("Remote Service error: '%s'" % 
+                                          urlerr.reason)
+            struct = json.load(result)
+
+            relations.extend([SocialVertex(each_rsvid) for each_rsvid in struct['ids']])
+            cursor = struct['next_cursor']
+
+    for each_svid in sviditer:
         vertex = SocialVertex(each_svid)
-        vertex.relations = [SocialVertex(each_relation_svid) 
-                            for each_relation_svid in json.load(result)]
+        vertex.relations = []
+        try:
+            populate_relations(graphurl, each_svid, vertex.relations)
+        except:
+            raise
         yield vertex
 
 def google_lookup(relationship, svids):

@@ -48,7 +48,9 @@ class DlsIterTest(unittest.TestCase):
         
         sg.populate_friends([12345])
         self.assertEqual(len(sg.vs), 6, 
-                             "No new additions")
+                             "No new Vertex additions")
+        
+        self.assertEqual(len(sg.es), 5)
         
         sg.populate_followers(12345)
         self.assertEqual(len(sg.vs), 6, 
@@ -58,6 +60,8 @@ class DlsIterTest(unittest.TestCase):
         self.assertEqual(len(sg.vs), 6, 
                              "set(friends).difference(set(followers)) should be None")
 
+        self.assertEqual(len(sg.es), 10)
+        
     def testDlsiter(self):
         '''Test Depth-limited Search functionality'''
         me = 12345
