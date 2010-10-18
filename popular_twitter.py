@@ -42,7 +42,7 @@ def rate_limit_status():
     print "\tReset time: %s" % time.strftime("%a %b %d %H:%M:%S %Z %Y", 
                                              time.localtime(reset_time))
 
-api = twitter.Api(username='colgur',password='madU64pa')
+api = twitter.Api(username='colgur',password='xxxxxx')
 colgur = api.GetUser('colgur')
 
 def lookup(relationship, svids):
