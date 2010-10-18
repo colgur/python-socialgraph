@@ -1,0 +1,125 @@
+Thursday, January 21 2010
+   Features missing from Desktop Clients (that I am aware of):
+      Which Lists/Groups have I been reading lately?
+         List support seems to be missing altogether from Gwibber; Is on a qtwitter branch
+      Which Links have I opened in the last 24 hours?
+         Since last client start
+      Who have I been Replying to lately?
+         Which links have I been sharing?
+      Who is the most active speaker in List/Group in the last 24/48/all-time?
+         Who is the least active?
+	 Exclude the most active
+      What is the most active Tag/word/phrase/link in this List/Group
+      Who is most often Replied to in a List/Group?
+         Does one have to be Friends with both correspondents in order to see the '@' messages?
+
+Wednesday, January 20 2010
+   SocialSubGraph needs a UI and I need an open source collaboration
+      Gwibber
+         Python-GTK
+	 GPL
+	 Awesome unified view of Twitter, Facebook, and Identi.ca
+	 Missing List and Friendship Creation/Destruction
+	    Twitter List functionality has become really important to my use of the service
+	    Want to add Friends and change List Membership
+	       Both features exist in the Twitter API but neither exists in the program
+	       Not sure about Facebook API (or the other services)
+	       Not a feature in their roadmap (that I can tell from their launchpad)
+	 Restricted to Desktop via GTK
+      Qtwitter
+         C/C++-Qt
+	 Haven't fired this one up but need to see Qt in action
+	 Also missing List and Friendship Creation/Destruction
+	 Has embedded potential
+	    Android uses Qt (to-do: confirm)
+	 Becomes an excuse to use Boost Graph Library
+	 Would rather write this in Python
+	    Already have some code for SocialSubGraph
+	    Believe PyQt is going to be an programming task than using C++ to create UI (Qt or any other)
+
+Tuesday, January 12 2010
+   Going to focus exclusively on Respondence
+      Need a class that can drive socialgraph based on authenticated Twitter data
+   
+Wednesday, December 30 2009
+   Should think on how to make use of Lists
+      Following a List doesn't necessarily mean following every person in that List
+         Will I Follow List Members individually after Following them via Lists? 
+	 Would I follow any Individual if my Client(s) fully supported Lists? Hmmm...
+
+   Lists could be used to seed Cluster Modularity calculations
+      Would need a new definition for Relationship for SocialEdge
+
+Wednesday, December 23 2009
+   Probably going back to Twitter given limiations of Google Social Graph
+      Google Social Graph is far more general than Twitter 
+         however all Incoming Edges are of Type "me" 
+	 IE are Identity Relations and therefore less interesting (for this purposes of this module)
+
+   Thinking of Respondence as a different SocialSubGraph
+      Twitter Social Graph Methods are not Authenticated
+      Reponse could be a one-off e.g. a reaction to a hashtag search
+         Might be interesting to know how often my Friends Respond to a Tweet but never Follow
+
+Sunday, December 20 2009
+   SocialSubGraph interface should be generalized to support both Google Social Graph API and Twitter Social Graph Methods
+      "Node URI" from Google and "Friend/Follower ID" from Twitter could generalize to "Vertex ID" 
+         except that iGraph already uses that concept
+      	 Still, "Social Vertex" might be a useful concept where current 'uri' becomes 'identifier'
+
+Wednesday, December 09 2009
+   Definitely influenced by 'http://github.com/markpasc/giraffe/socialgraphapi.py'. Thanks Mark
+
+Tuesday, December 08 2009
+   iGraph provides for graph construction and analysis
+      socialgraph needs to focus on analysis
+
+   FlyGraph caches part of Social Graph
+      import FlyGraph, Node from socialgraph
+
+      # Create a Directed, Fly-weight Graph 
+      graph = FlyGraph()
+
+      # Retrieve/Get a Node
+      # Under the hood:
+      #   - Social Graph lookup with the given URI
+      node = graph.populate_node("twitter.com/colgur")
+
+      edges = graph.populate_neighbors(node, socialgraph.ALL)   
+
+Monday, December 07 2009
+   May find igraph functionality useful so should create proxies instead of derived classes
+      import FlyGraph, Node from socialgraph
+
+      # Create a Directed, Fly-weight Graph 
+      graph = FlyGraph()
+
+      # Create a Node.
+      # Under the hood:
+      # 	   - Query Google Social Graph: 'http://socialgraph.apis.google.com/lookup?q=twitter.com%2Fcolgur'
+      #       - Attributes data held by new object
+      node = Node("twitter.com/colgur")
+
+      # Add Node to Graph
+      # Under the hood:
+      # 	   - Node is assigned Vertex ID
+      graph.add_nodes([node])
+
+      dfs_iter = node.dfs_iter(3)
+      currentnode = dfs_iter.next()
+
+      edgesin_iter = currentnode.edgesin_iter()
+      currentedgein = edgesin_iter.next()
+    
+
+Sunday, December 06 2009
+   My primary interest in python-socialgraph:
+      import socialgraph
+
+      node = socialgraph.Node(["twitter.com/colgur"])
+
+      dfs_iter = node.dfs_iter(3)
+      currentnode = dfs_iter.next()
+
+      edgesin_iter = currentnode.edgesin_iter()
+      currentedgein = edgesin_iter.next()

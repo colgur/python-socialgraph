@@ -1,0 +1,8 @@
+# cache files
+*.bak
+*~
+
+# intermediates
+*.pyc
+
+
